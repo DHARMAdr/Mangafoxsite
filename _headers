@@ -1,0 +1,16 @@
+# =====================================================================
+# MangaFlow - _headers   (security headers for Netlify and Cloudflare Pages)
+# WHY: a web page can only ask the browser to be careful with <meta> tags; real HTTP headers are stronger
+#      and can also stop other sites from showing yours inside a frame (clickjacking).
+# HOW: put this file next to index.html. Netlify and Cloudflare Pages read it by itself.
+#      GitHub Pages ignores this file (it cannot set headers) - there the <meta> policy in index.html is used.
+# IMPROVE: replace  connect-src *  with the exact addresses of your own proxy once you only use that.
+# =====================================================================
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src * data: blob:; media-src * blob:; font-src * data:; connect-src *; frame-src 'self' about: blob: data:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000

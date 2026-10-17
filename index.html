@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<!--
+  MangaFlow Reader - index.html
+  WHY: This file is only the SKELETON (structure). Looks live in style.css, behaviour lives in app.js
+       (and the PDF maker in pdfmaker.js). Keeping them apart makes each one easy to edit without breaking the others.
+  HOW: every element that app.js needs has an id="..." . app.js finds it with $('#thatId').
+       If you rename an id here, rename it in app.js too.
+  IMPROVE: Add a web-app manifest + service worker so the site can be "installed" on phones.
+-->
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+
+  <!-- WHY: width=device-width makes the page fit phone screens; viewport-fit=cover lets us use the
+       full screen on notched phones (we add safe-area padding in CSS).
+       interactive-widget=resizes-content: when the phone keyboard opens, the page shrinks instead of
+       hiding things behind the keyboard (the floating search bar needs this).
+       IMPROVE: test on small Android phones with large font sizes. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+
+  <!-- WHY: colours the phone's browser bar to match the site. app.js updates it when the theme changes. -->
+  <meta name="theme-color" content="#ffffff">
+
+  <!-- WHY: stops the browser sending OUR address as "Referer" to image servers.
+       Many manga hosts refuse images when the Referer is a different site.
+       IMPROVE: for hosts that still block, route images through your own proxy (see app.js makeImg). -->
+  <meta name="referrer" content="no-referrer">
+
+  <!-- SECURITY (round 7): Content-Security-Policy = a list of what this page is allowed to load.
+       WHY: if someone ever slips a script into a manga page or a link, the browser refuses to run it.
+       HOW: script-src 'self' -> only OUR app.js / pdfmaker.js may run (no inline scripts, no other sites).
+            object-src 'none' -> no plug-ins.  form-action 'self' -> a form can not send data to another site.
+            img/media/font/connect allow any site because manga pictures and proxies live on many hosts.
+            style-src needs 'unsafe-inline' because pages we display bring their own <style> blocks (they are
+            shown in a sandboxed frame that has no scripts).
+            ROUND 8: style-src also allows https: because the frame inherits this policy, and without it the
+            CSS FILES of manga sites were blocked (pages looked bare and broken). Style sheets cannot run code.
+            (base-uri is not limited here, because the frame needs its own <base> to show pictures.)
+       LIMIT: a <meta> policy cannot set frame-ancestors. Use the _headers file (see MANGAFLOW.md) on hosts that allow headers.
+       IMPROVE: tighten connect-src to your own proxy addresses once you only use those. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src * data: blob:; media-src * blob:; font-src * data:; connect-src *; frame-src 'self' about: blob: data:; object-src 'none'; form-action 'self'">
+
+  <title>MangaFlow Reader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-side="right">
+
+  <!-- =====================================================================
+       BROWSER VIEW  (the "mini browser": address bar + page area)
+       WHY: The user types a manga site/URL here; app.js fetches it and shows it in the frame.
+       IMPROVE: Add tabs, or a "recently read" row with cover thumbnails.
+       ===================================================================== -->
+  <div id="browser">
+    <header class="navbar">
+      <button id="btnBack" title="Back" aria-label="Back">&#8592;</button>
+      <button id="btnFwd" title="Forward" aria-label="Forward">&#8594;</button>
+      <button id="btnReload" title="Reload" aria-label="Reload">&#10227;</button>
+      <button id="btnHome" title="Start page" aria-label="Start page">&#8962;</button>
+
+      <!-- WIDE SCREENS: a normal address form.
+           WHY: a <form> gives us "press Enter to go" for free on both keyboards and phones.
+           inputmode="url" shows the URL keyboard on phones. font-size 16px in CSS stops iOS auto-zoom. -->
+      <form id="addrForm" autocomplete="off">
+        <span class="inwrap"><input id="addr" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+               placeholder="Paste a manga URL or type a name to search" aria-label="Address or search"><button type="button" class="clearx" data-for="addr" hidden title="Clear" aria-label="Clear the box">&#10005;</button></span>
+        <button type="submit" class="primary">Go</button>
+      </form>
+
+      <!-- NARROW SCREENS (phones, small windows): the form above is hidden by CSS and this "pill" is shown.
+           Tapping it opens the floating search bar (#searchPop below). -->
+      <button id="addrPill" type="button" aria-label="Search or paste a link">
+        <span aria-hidden="true">&#128269;</span><span id="pillText">Search or paste a link</span>
+      </button>
+
+      <button id="btnStar" title="Bookmark this page" aria-label="Bookmark">&#9734;</button>
+      <button id="btnThemeB" title="Toggle white / black" aria-label="Toggle theme">&#9680;</button>
+      <button id="btnSettings" title="Settings" aria-label="Settings">&#9881;</button>
+    </header>
+
+    <!-- WHY: thin progress line shown while a page is loading (feedback on slow proxies). -->
+    <div id="loadbar"></div>
+
+    <main id="viewport">
+      <!-- Start page: shown until the first page is opened. -->
+      <section id="start">
+        <!-- ROUND 10: a friendlier start page. HERO = the big search card; STEPS = how it works; then your lists as cards.
+             WHY: the old page was one grey paragraph. HOW: plain HTML + CSS (gradient, cards); app.js fills the lists and chips.
+             IMPROVE: add cover thumbnails, a "trending" row, and a dark/light preview. -->
+        <div class="hero">
+          <div class="hero-badge">&#128214; MangaFlow</div>
+          <h2>Read any manga in one endless scroll</h2>
+          <p class="hero-sub">Paste a series or chapter link. It opens straight in reading mode.</p>
+          <form id="heroForm" autocomplete="off">
+            <span class="inwrap"><input id="addrHero" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   placeholder="Paste a manga link, or type a name to search" aria-label="Manga link or search words"><button type="button" class="clearx" data-for="addrHero" hidden title="Clear" aria-label="Clear the box">&#10005;</button></span>
+            <button type="button" id="heroPaste" title="Paste from clipboard" aria-label="Paste">&#128203;</button>
+            <button type="submit" class="primary">Read</button>
+          </form>
+          <div id="statusChips" class="status-chips" aria-label="Status"></div>
+        </div>
+
+        <div class="steps">
+          <div class="step"><b>1</b><span>Paste a link</span><small>series page or any chapter</small></div>
+          <div class="step"><b>2</b><span>Scroll to read</span><small>chapters load by themselves, up and down</small></div>
+          <div class="step"><b>3</b><span>Download a PDF</span><small>see the file size first</small></div>
+        </div>
+
+        <!-- WHY: shows the manga, the site and the exact chapter you stopped at. Tap one to continue there. -->
+        <h3>Continue reading</h3>
+        <div id="readList" class="list cards"></div>
+        <h3>Recent pages</h3>
+        <div id="recentList" class="list"></div>
+        <h3>Bookmarks</h3>
+        <div id="bookList" class="list"></div>
+        <p class="muted small">Only read content you have the right to access.</p>
+      </section>
+
+      <!-- WHY sandbox: we render the other site's HTML inside an iframe. "allow-same-origin" lets OUR script
+           attach click handlers to its links. We deliberately do NOT allow scripts, so nothing from the
+           other site can run. "allow-forms" lets site-search forms fire events we can intercept.
+           IMPROVE: add a "desktop site" toggle by sending a different User-Agent through your own proxy. -->
+      <iframe id="frame" title="Page" sandbox="allow-same-origin allow-forms" referrerpolicy="no-referrer" hidden></iframe>
+    </main>
+
+    <!-- Floating corner button: appears once a page is loaded. -->
+    <button id="fabRead" hidden>&#128214; Reading mode</button>
+  </div>
+
+  <!-- =====================================================================
+       READER VIEW  (reading mode)
+       WHY: Hidden until the user presses the reading-mode button. Uses normal window scrolling so
+            mobile browsers can hide their own toolbars while you scroll (more room for the art).
+       IMPROVE: Add a "page-by-page" mode (swipe left/right) for people who dislike vertical scroll.
+       ===================================================================== -->
+  <div id="reader" hidden>
+    <!-- ROUND 9: the reading-progress line is NOT inside the title bar any more. WHY: the whole bar now SLIDES UP out of
+         the screen while you scroll down (CSS transform). A line inside it would be trapped by that transform, and before
+         it was left floating in the middle of the page. Here it is pinned to the very top edge of the screen instead, so
+         it stays a thin 3 px line that never covers the pictures. app.js changes its width ($('#progress i')). -->
+    <div id="progress" aria-hidden="true"><i></i></div>
+
+    <!-- class "ui-hide": the buttons fade out while you scroll DOWN and come back when you scroll UP; the whole bar also
+         slides up (ROUND 9) so nothing is left behind on the page. -->
+    <header id="readerBar">
+      <div class="rb-row">
+        <button id="btnHomeR" class="ui-hide" title="Go to the start page" aria-label="Start page">&#8962;</button>
+        <button id="btnExit" class="ui-hide" title="Exit reading mode (Esc)">&#10005;<span class="lbl"> End reading</span></button>
+        <!-- ROUND 8: the title now has class ui-hide too, so it fades away while you scroll down (like the buttons)
+             and comes back when you scroll up. -->
+        <div class="rb-title ui-hide">
+          <h1 id="rTitle">Manga</h1>
+          <span id="rSub"></span>
+        </div>
+        <button id="btnChapters" class="ui-hide" title="Chapter list (C)">&#9776; &#9662;</button>
+        <button id="btnTheme" class="ui-hide" title="Toggle white / black (T)">&#9680;</button>
+        <button id="btnSettingsR" class="ui-hide" title="Settings, clear chapter cache" aria-label="Settings">&#9881;</button>
+      </div>
+      <!-- ROUND 8: search / link bar INSIDE reading mode. Paste another manga link and press Read: the site is opened
+           and read straight away. Typing words (not a link) leaves reading mode and shows the search results.
+           It hides on scroll down and returns on scroll up, like everything else in this bar. -->
+      <form id="rdForm" class="rb-search ui-hide" autocomplete="off">
+        <span class="inwrap"><input id="rdAddr" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+               placeholder="Paste a manga link to read it, or type a name to search" aria-label="Link or search words"><button type="button" class="clearx" data-for="rdAddr" hidden title="Clear" aria-label="Clear the box">&#10005;</button></span>
+        <button type="submit" class="primary" title="Open and read this link">Read</button>
+      </form>
+    </header>
+
+    <!-- Chapter dropdown: clicking an entry jumps to that chapter. The first button makes the PDF. -->
+    <div id="chapterMenu" hidden>
+      <button id="btnDlMenu" class="primary dl-menu">&#11015; Download chapters (PDF)&hellip;</button>
+      <button id="btnFreeMenu" class="dl-menu">&#129529; Free memory (clear chapter cache)&hellip;</button>
+      <ul id="chapterList"></ul>
+    </div>
+
+    <!-- ROUND 9: EARLIER CHAPTERS BAR.
+         WHY: when you open a link of chapter 5 directly, reading starts at chapter 5. This bar sits above it and lets
+              you load chapters 4, 3, 2, 1 (above, without losing your place). They also load by themselves when you
+              scroll UP near the top, or press the "up" round key / Left arrow at the first chapter.
+         HOW: app.js loadPrev() fills it (text in #prevInfo, button #btnPrevLoad). It always keeps the same height, so the
+              page never jumps when it has nothing more to offer.
+         IMPROVE: show the names of the earlier chapters here. -->
+    <div id="prevBar">
+      <button id="btnPrevLoad" type="button">&#9650; Load earlier chapters</button>
+      <span id="prevInfo" class="muted small"></span>
+    </div>
+
+    <!-- All chapters get appended here, one after another. -->
+    <main id="stream"></main>
+
+    <!-- WHY: invisible marker. When it comes near the screen, app.js loads the next chapter. -->
+    <div id="sentinel"></div>
+
+    <!-- DOWNLOAD BAR: at the end of the page. Appears as soon as one chapter is loaded. -->
+    <section id="dlBar" hidden>
+      <p id="dlInfo" class="muted"></p>
+      <button id="btnDl" class="primary">&#11015; Download chapters (PDF)&hellip;</button>
+      <p class="muted small">Choose which chapters (for example 1&ndash;50). One PDF named after the manga, every chapter is ONE long page like the reading mode, full quality. You can keep reading while it downloads.</p>
+    </section>
+
+    <div id="theEnd" hidden>
+      <p>&#8212; End of the available chapters &#8212;</p>
+      <button id="btnTopEnd" class="primary">Back to top</button>
+    </div>
+
+    <!-- READER KEYS (round 9: ONE horizontal row of round 3D buttons in the bottom-RIGHT corner; switchable in Settings).
+         Order, left to right:
+           1. reload THIS chapter        2. reload ALL open chapters
+           3. up arrow = previous chapter  4. down arrow = next chapter
+           5. End = jump to the end of everything that is loaded (the real End key on the keyboard does the same).
+         Real keyboard: Left / Right arrow = previous / next chapter, End = end of the page.
+         The whole row hides while you scroll down and returns when you scroll up.
+         The side (right is the default, or left) can be changed in Settings. -->
+    <!-- ROUND 9b: the two RELOAD keys stay in the bottom-LEFT corner; the previous / next / end keys form one horizontal
+         row in the bottom-RIGHT corner. #side is a full-width, click-through strip that holds the two groups
+         (.kg). The "side" setting now says where the arrow keys live (right = default, left swaps the two groups). -->
+    <nav id="side" class="ui-hide" aria-label="Reader keys">
+      <div class="kg kg-l">
+        <button id="btnReload1" class="key k-reload" title="Reload this chapter" aria-label="Reload this chapter">&#8635;</button>
+        <button id="btnReloadAll" class="key k-reloadall" title="Reload all open chapters" aria-label="Reload all open chapters">&#8635;<small>all</small></button>
+        <!-- ROUND 10: scroll to the top of the page (same round 3D look as the reload keys; the Home key does the same) -->
+        <button id="btnTop" class="key k-top" title="Go to the top of the page (Home key)" aria-label="Go to the top">&#8679;<small>top</small></button>
+      </div>
+      <div class="kg kg-r">
+        <button id="btnPrev" class="key k-up" title="Previous chapter (Left arrow)" aria-label="Previous chapter">&#8593;</button>
+        <button id="btnNext" class="key k-down" title="Next chapter (Right arrow)" aria-label="Next chapter">&#8595;</button>
+        <button id="btnEnd" class="key k-end" title="Go to the end of the loaded chapters (End key)" aria-label="Go to the end">&#8615;<small>end</small></button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Small shared widgets -->
+  <div id="busy" hidden></div>
+
+  <!-- DOWNLOAD DOCK (round 7): floating box in the bottom corner. It stays on screen in every view until the
+       downloads are finished or closed, shows the PDF size while it grows, and can be minimised to a small pill. -->
+  <!-- ROUND 8: the dock now sits right ABOVE the reader keys (same corner). The round pill shows the progress; tap it to open
+       the list. Minimising (or just ignoring) the list NEVER stops a download: only the Cancel button does. -->
+  <aside id="dock" class="ui-hide min" hidden aria-label="Downloads">
+    <button id="dockIcon" type="button" aria-label="Show or hide downloads">
+      <span class="ring"><span class="arrow">&#11015;</span></span>
+      <span id="dockLabel">Downloads</span><b id="dockCount"></b>
+    </button>
+    <div id="dockBox">
+      <div class="dock-head"><b>Downloads</b><span class="muted small">keeps going when minimised</span><button id="dockMin" type="button" title="Minimise (the download keeps running)" aria-label="Minimise downloads">&#8212;</button></div>
+      <ul id="dockList"></ul>
+    </div>
+  </aside>
+
+  <!-- RANGE DIALOG (round 7): which chapters go into the PDF. -->
+  <dialog id="rangeDlg">
+    <form method="dialog">
+      <h3>Download chapters as PDF</h3>
+      <p class="muted small">Pick the chapters. Chapters that are not open in reading mode are fetched for you.</p>
+      <div id="rgChips" class="chips" role="group" aria-label="Quick ranges"></div>
+      <div class="rg-row">
+        <label>From <select id="rgFrom"></select></label>
+        <label>To <select id="rgTo"></select></label>
+      </div>
+      <label>Make
+        <select id="rgSplit">
+          <option value="0">one file</option>
+          <option value="25">a new file every 25 chapters</option>
+          <option value="50">a new file every 50 chapters</option>
+          <option value="100">a new file every 100 chapters</option>
+        </select>
+      </label>
+      <!-- ROUND 10: quality choice and the ESTIMATED FILE SIZE are shown BEFORE you press "Make PDF" -->
+      <label>Pictures that must be converted (WebP / GIF)
+        <select id="rgMode">
+          <option value="small">Smaller files (JPEG 92%, looks the same)</option>
+          <option value="lossless">Perfect copy (much bigger files)</option>
+        </select>
+      </label>
+      <p id="rgSize" class="rg-size" aria-live="polite"></p>
+      <p id="rgInfo" class="muted small"></p>
+      <div class="row">
+        <button type="button" id="rgCancel">Cancel</button>
+        <button type="button" id="rgGo" class="primary">Make PDF</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- FLOATING SEARCH BAR (phones / narrow windows). Opened by the pill in the address bar. -->
+  <div id="popShade" hidden></div>
+  <div id="searchPop" hidden role="dialog" aria-label="Search or paste a link">
+    <form id="popForm" autocomplete="off">
+      <span class="inwrap"><input id="addr2" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+             placeholder="Paste a link or type a name to search" aria-label="Link or search words"><button type="button" class="clearx" data-for="addr2" hidden title="Clear" aria-label="Clear the box">&#10005;</button></span>
+      <button type="button" id="btnPaste" title="Paste from clipboard" aria-label="Paste">&#128203;</button>
+      <button type="submit" class="primary">Go</button>
+    </form>
+  </div>
+
+  <!-- ROUND 8: BIG ERROR POP-UP. A modal dialog (centre of the screen, impossible to miss) with a plain summary, a hint
+       and a full report you can copy and paste to Claude. app.js showError() fills it in. Global handlers also use it, so
+       even unexpected crashes show up here instead of failing silently. -->
+  <dialog id="errbox" aria-labelledby="errTitle">
+    <h2 id="errTitle">&#9888; Something went wrong</h2>
+    <p id="errSummary"></p>
+    <p id="errHint" class="muted"></p>
+    <textarea id="errText" readonly rows="14" aria-label="Error report"></textarea>
+    <div class="row">
+      <button id="errClose" type="button">Close</button>
+      <button id="errCopy" type="button" class="primary">Copy report</button>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Settings dialog (native <dialog>: focus handling + Esc to close for free).
+       ROUND 9: FITS ONE SCREEN, NO SCROLLING.
+       WHY: the old dialog was one long list, so you had to scroll up and down inside it. Now every option lives in a "card"
+            (proxies, reading, memory, security) and the cards sit side by side in a grid.
+       HOW: on a big screen all four cards are visible at once. When the screen is too small for that (a phone), app.js
+            fitSettings() measures the dialog and switches to TAB MODE: a row of tabs appears and only one card is shown at a
+            time, so every tab still fits without scrolling. It re-checks whenever the window changes size or turns around.
+            No option was removed; they were only regrouped. All ids are unchanged, so the old code keeps working.
+       IMPROVE: remember the last open tab; add a search box that finds an option by name. -->
+  <dialog id="settings" aria-labelledby="setTitle">
+    <form method="dialog" id="setForm">
+      <div class="set-head">
+        <h3 id="setTitle">Settings</h3>
+        <!-- Tabs: hidden on big screens, shown by fitSettings() when everything does not fit at once. -->
+        <nav id="setTabs" role="tablist" aria-label="Settings sections">
+          <button type="button" role="tab" data-tab="proxy" class="active">Proxies</button>
+          <button type="button" role="tab" data-tab="reading">Reading</button>
+          <button type="button" role="tab" data-tab="memory">Memory</button>
+          <button type="button" role="tab" data-tab="security">Security</button>
+        </nav>
+      </div>
+
+      <div class="set-grid">
+        <!-- CARD 1: PROXY LIST. The free ones are added automatically the first time the site opens.
+             Remove any with the cross, add your own below, test them, or reset to the free defaults. -->
+        <fieldset id="proxyBox" class="set-card active" data-tab="proxy">
+          <legend>CORS proxies</legend>
+          <p class="muted small">Browsers block direct reading of other sites, so a proxy fetches the page for you.
+             All proxies are asked at the same time; the first good answer wins. Free ones are slow or blocked
+             at times. Your own proxy (see MANGAFLOW.md) is the reliable choice, and it is the only kind that can
+             load hidden chapter lists.</p>
+          <ul id="proxyList"></ul>
+          <div class="inline">
+            <input id="proxyNew" type="text" inputmode="url" autocapitalize="off" spellcheck="false"
+                   placeholder="https://your-proxy.workers.dev/?url={url}" aria-label="Add a proxy address">
+            <button type="button" id="proxyAdd" class="primary">Add</button>
+          </div>
+          <div class="inline">
+            <button type="button" id="proxyTest">Test all</button>
+            <button type="button" id="proxyReset">Reset to defaults</button>
+          </div>
+        </fieldset>
+
+        <!-- CARD 2: READING AND DISPLAY (chapter width, button side, PDF mode, keyboard, auto-read, tap to scroll). -->
+        <fieldset id="readBox" class="set-card" data-tab="reading">
+          <legend>Reading &amp; display</legend>
+          <label>Chapter width: <b id="setWidthVal"></b>px
+            <input id="setWidth" type="range" min="420" max="1200" step="20">
+          </label>
+          <label>Reader buttons on the
+            <select id="setSide"><option value="right">right</option><option value="left">left</option></select>
+          </label>
+          <label>WebP / GIF pages in the PDF
+            <select id="setPdf">
+              <option value="small">Smaller files (JPEG 92%, looks the same)</option>
+              <option value="lossless">Perfect copy (much bigger files, 5-10x)</option>
+            </select>
+          </label>
+          <p class="muted small">JPEG and PNG pages are always copied untouched, whatever you choose here.</p>
+          <label class="check"><input type="checkbox" id="setArrows"> Keyboard: &#8592; previous chapter, &#8594; next chapter</label>
+          <label class="check"><input type="checkbox" id="setAutoRead"> Open a manga link straight in reading mode (when you paste it in the address bar)</label>
+          <label class="check"><input type="checkbox" id="setTap"> Tap the chapter to scroll down (tap the top of the screen to scroll up)</label>
+        </fieldset>
+
+        <!-- CARD 3: ROUND 7: FREE MEMORY. Many open chapters make the page slow. Clearing removes their pictures from memory;
+             a cleared chapter loads again by itself when you scroll back to it. -->
+        <fieldset id="memBox" class="set-card" data-tab="memory">
+          <legend>Free memory (reading mode)</legend>
+          <p class="muted small" id="memInfo"></p>
+          <div class="rg-row">
+            <label>From <select id="memFrom"></select></label>
+            <label>To <select id="memTo"></select></label>
+          </div>
+          <div class="inline">
+            <button type="button" id="memRange">Clear this range</button>
+            <button type="button" id="memBefore">Clear all before my chapter</button>
+          </div>
+          <label>Clear old chapters by itself
+            <select id="memAuto">
+              <option value="0">Off</option>
+              <option value="10">when more than 10 chapters behind me</option>
+              <option value="20">when more than 20 chapters behind me</option>
+              <option value="30">when more than 30 chapters behind me</option>
+            </select>
+          </label>
+          <p class="muted small">The chapter you are reading is never cleared. Downloads are not affected.</p>
+        </fieldset>
+
+        <!-- CARD 4: ROUND 7: SECURITY. Small protections that need no server. -->
+        <fieldset id="secBox" class="set-card" data-tab="security">
+          <legend>Security &amp; privacy</legend>
+          <label class="check"><input type="checkbox" id="setNoHist"> Do not save my reading history</label>
+          <label class="check"><input type="checkbox" id="setWipe"> Erase history and cache when I close this tab</label>
+          <div class="inline"><button type="button" id="secCheck">Check my setup</button></div>
+          <ul id="secList" class="small"></ul>
+        </fieldset>
+      </div>
+
+      <div class="row">
+        <button type="button" id="btnClear">Clear history &amp; cache</button>
+        <button class="primary" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- pdfmaker.js must come BEFORE app.js (app.js uses MangaPDFLib). -->
+  <script src="pdfmaker.js"></script>
+  <script src="app.js"></script>
+  <!-- ROUND 10 (OPTIONAL): the chapter slider on the right edge. Delete this one line (or the file) and the slider is simply gone;
+       nothing else needs it. It talks to app.js only through the browser event "mf-chapter-step". -->
+  <script src="chapter-slider.js"></script>
+</body>
+</html>

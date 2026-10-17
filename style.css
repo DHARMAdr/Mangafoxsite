@@ -1,0 +1,529 @@
+/* =====================================================================
+   MangaFlow Reader - style.css
+   WHY: All visuals live here so changing the look never touches the logic.
+   Every block below has:  WHY (reason it exists)  |  IMPROVE (ideas for later)
+   ===================================================================== */
+
+/* ---------- 1. THEME VARIABLES ----------
+   WHY: Colours are stored once as variables. The theme toggle only flips data-theme on <html>
+        and every colour below updates automatically. Light = pure white, dark = pure black (#000).
+   HOW: var(--name) in any rule below reads the value. The [data-theme="dark"] block overrides them.
+   IMPROVE: Add a third "sepia" theme by adding [data-theme="sepia"] { ... }. */
+:root {
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: #666666;
+  --bar: rgba(255, 255, 255, .92);
+  --line: rgba(0, 0, 0, .14);
+  --accent: #e8590c;
+  --shadow: 0 14px 44px rgba(0, 0, 0, .20);
+  --keytop: #f6f6f6;                            /* keycap colours (arrow keys in reading mode) */
+  --keyedge: #b9b9b9;
+  --keyhi: #ffffff;                             /* highlight spot on the round 3D keys */
+  --w: 820px;                                   /* chapter column width (changed in Settings) */
+  --safe-t: env(safe-area-inset-top, 0px);      /* phone notch spacing */
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="dark"] {
+  --bg: #000000;
+  --fg: #eeeeee;
+  --muted: #9a9a9a;
+  --bar: rgba(0, 0, 0, .92);
+  --line: rgba(255, 255, 255, .18);
+  --shadow: 0 14px 44px rgba(255, 255, 255, .08);
+  --keytop: #2d2d2d;
+  --keyedge: #1b1b1b;
+  --keyhi: #5a5a5a;
+}
+
+/* ---------- 2. BASE RESET ----------
+   WHY: border-box makes widths predictable; removing the default margin avoids a stray white edge.
+        Reduced-motion: people who turn off animations in their system settings get no animations.
+   IMPROVE: add more @media (prefers-reduced-motion) rules if you add more animation. */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.45;
+}
+[hidden] { display: none !important; }          /* WHY: makes the "hidden" attribute always win */
+.muted { color: var(--muted); }
+.small { font-size: .8rem; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- 3. BUTTONS & INPUTS ----------
+   WHY: 40px+ touch targets so thumbs can hit them; one shared style keeps the UI consistent.
+        :focus-visible draws a clear outline for people who use the keyboard (Tab key).
+   IMPROVE: swap the text symbols for inline SVG icons for a sharper look. */
+button, input, select {
+  font: inherit; color: inherit;
+}
+button {
+  min-width: 40px; min-height: 40px;
+  padding: 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--fg); }
+button:active { transform: scale(.96); }
+button:disabled { opacity: .35; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="text"] {
+  width: 100%; min-height: 40px; padding: 0 12px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 16px;                              /* WHY: 16px stops iOS Safari zooming on focus */
+}
+input[type="text"]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+/* ---------- 4. BROWSER VIEW ----------
+   WHY: Flex column = fixed address bar on top, page area fills the remaining height.
+        100dvh follows the real visible height on phones (100vh is the fallback for old browsers).
+   IMPROVE: make the navbar auto-hide on scroll like a real mobile browser. */
+#browser { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+.navbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 8px 8px; padding-top: calc(8px + var(--safe-t));
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+#addrForm { flex: 1; display: flex; gap: 6px; min-width: 0; }
+#loadbar { height: 3px; background: transparent; overflow: hidden; }
+#loadbar.on::before {
+  content: ""; display: block; height: 100%; width: 40%;
+  background: var(--accent); animation: slide 1s linear infinite;
+}
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+#viewport { position: relative; flex: 1; overflow: auto; }
+#frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+#start { max-width: 720px; margin: 0 auto; padding: 24px 16px 100px; }
+
+/* History / bookmark rows: bold title on top, small grey line under it (site, chapter, time). */
+.list { display: flex; flex-direction: column; gap: 6px; }
+.list .item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; min-height: 52px; padding: 8px 12px; text-align: left;
+}
+.item .t { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .s { font-size: .78rem; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Floating "Reading mode" button (bottom-right corner).
+   WHY: always reachable with the thumb; z-index keeps it above the iframe.
+   IMPROVE: show how many chapters were detected, e.g. "Reading mode (120)". */
+#fabRead {
+  position: fixed; right: 16px; bottom: calc(18px + var(--safe-b)); z-index: 20;
+  height: 48px; padding: 0 18px; border-radius: 999px;
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+
+/* ---------- 4b. SEARCH PILL + FLOATING SEARCH BAR (small screens) ----------
+   WHY: on a phone the long address input was squeezed next to six buttons and showed almost nothing.
+        Under 760px wide the input is hidden, the navbar wraps into two rows, and a full-width "pill"
+        shows the current address. Tapping the pill opens a floating bar with a big input + Go button.
+   HOW: #addrPill is hidden on wide screens and #addrForm is hidden on narrow screens (media query below).
+   IMPROVE: let the pill show the page title instead of the address. */
+#addrPill {
+  display: none; align-items: center; gap: 8px;
+  min-width: 0; padding: 0 12px; text-align: left;
+  border-radius: 999px;
+}
+#addrPill span:first-child { flex: none; }
+#pillText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+@media (max-width: 760px) {
+  .navbar { flex-wrap: wrap; row-gap: 6px; }
+  #addrForm { display: none; }
+  #addrPill { display: flex; order: -1; flex: 1 0 100%; min-height: 44px; }
+  .navbar > button:not(#addrPill) { flex: 1 1 0; }      /* the six small buttons share the second row evenly */
+}
+#popShade { position: fixed; inset: 0; z-index: 79; background: rgba(0, 0, 0, .45); }
+#searchPop {
+  position: fixed; z-index: 80; left: 50%; transform: translateX(-50%);
+  top: calc(10px + var(--safe-t)); width: min(680px, calc(100vw - 20px));
+  padding: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+}
+#popForm { display: flex; gap: 6px; align-items: center; }
+#popForm input { flex: 1; min-width: 0; min-height: 46px; }
+#popForm button { min-height: 46px; }
+
+/* ---------- 5. READER BAR (title space at the top) ----------
+   WHY: fixed at the top so the manga name is always visible. Blur makes text readable over pages.
+   IMPROVE: add a tiny cover thumbnail next to the title. */
+#readerBar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+  background: var(--bar);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  padding-top: calc(var(--safe-t) + 3px);                 /* 3px = room for the progress line at the very top */
+  transition: transform .28s ease;                        /* ROUND 9: the bar SLIDES up (see section 6) */
+  will-change: transform;
+}
+.rb-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+.rb-title { flex: 1; min-width: 0; text-align: center; transition: opacity .25s; }
+.rb-title h1 { margin: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rSub { font-size: .75rem; color: var(--muted); }
+/* ROUND 8: search / link row inside the reader bar. */
+.rb-search { display: flex; gap: 6px; padding: 0 10px 8px; }
+.rb-search input { flex: 1; min-width: 0; min-height: 40px; }
+.rb-search button { min-height: 40px; }
+/* ROUND 9: the reading-progress line is pinned to the very top edge of the screen (position: fixed), outside the bar.
+   WHY: the bar slides up when you scroll down; the line used to stay behind in the middle of the page. Now it is always at
+        the top edge, thin (3 px) and on top of everything, so it never covers the art.
+   HOW: app.js updateCurrent() sets the width of the <i> inside. top = safe-area so a phone notch does not hide it. */
+#progress { position: fixed; top: var(--safe-t); left: 0; right: 0; height: 3px; z-index: 35; background: transparent; pointer-events: none; }
+#progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .12s linear; }
+
+/* ---------- 6. AUTO-HIDE WHILE SCROLLING DOWN ----------
+   WHY: app.js adds the class "scrolling" to <body> when you scroll DOWN. Buttons (exit, chapter list,
+        theme, arrow keys) fade out so nothing blocks the art. They come back ONLY when you scroll UP
+        (mouse wheel up, finger drag down, Up arrow key) or reach the top. The manga title stays (dimmed).
+   IMPROVE: make the 14 px "dead zone" in app.js a setting. */
+.ui-hide { transition: opacity .25s; }
+body.scrolling .ui-hide { opacity: 0; pointer-events: none; }
+/* ROUND 9: while you scroll down the WHOLE bar (title, buttons, search row) slides up out of the screen. The progress line
+   is a separate element pinned to the top edge, so it simply stays there as a thin line. The bar stops catching clicks
+   while it is away, so taps in the top area still scroll the chapter. It slides back when you scroll up. */
+body.scrolling #readerBar { transform: translateY(-110%); pointer-events: none; }
+body.scrolling #progress { opacity: .9; }
+
+/* ---------- 7. CHAPTER COLUMN (centered, "floating") ----------
+   WHY: margin auto centres each chapter; border + soft shadow make it look like a floating sheet.
+        On phones it goes full width and loses the rounded corners to give the art maximum size.
+   IMPROVE: add a "fit height" mode that scales each page to the screen height. */
+#stream { padding: 0; }
+/* ROUND 9: the earlier-chapters bar sits above the stream and also provides the empty space under the fixed title bar. */
+#prevBar {
+  min-height: calc(112px + var(--safe-t) + 64px); padding: calc(112px + var(--safe-t) + 10px) 12px 10px;   /* space for the bar + the controls */
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+}
+#prevBar button { min-height: 44px; padding: 0 18px; }
+#prevBar button:disabled { display: none; }               /* nothing earlier to load: only the text is shown */
+.chapter {
+  width: min(var(--w), 100%); margin: 0 auto 56px;
+  background: var(--bg);
+  border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+@media (max-width: 700px) {
+  .chapter { border-radius: 0; border-left: 0; border-right: 0; margin-bottom: 36px; }
+}
+
+/* Chapter header: manga name, chapter number, chapter title - at the start of every chapter. */
+.ch-head { text-align: center; padding: 30px 16px 22px; border-bottom: 1px solid var(--line); }
+.ch-manga { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.ch-num { font-size: clamp(1.5rem, 5vw, 2.1rem); font-weight: 800; margin: 4px 0; }
+.ch-title { color: var(--muted); }
+
+/* Pages. WHY: display:block removes the tiny gap browsers leave under images.
+   The grey min-height box reserves space so the page does not jump while images load. */
+img.page { display: block; width: 100%; height: auto; }
+img.page:not(.loaded) { min-height: 260px; background: rgba(128, 128, 128, .12); }
+.ch-end { text-align: center; color: var(--muted); padding: 26px 12px; border-top: 1px solid var(--line); }
+.ch-msg { text-align: center; padding: 40px 16px; color: var(--muted); }
+.ch-msg .row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+
+.spinner {
+  width: 28px; height: 28px; margin: 0 auto 10px;
+  border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#sentinel { height: 2px; }
+/* Download bar at the end of the page (round 2). */
+#dlBar { width: min(var(--w), 100%); margin: 0 auto; padding: 22px 16px; text-align: center; border-top: 1px solid var(--line); }
+#dlBar p { margin: 6px 0; }
+#dlBar button { min-height: 50px; padding: 0 24px; font-size: 1rem; }
+#theEnd { text-align: center; padding: 20px 16px calc(150px + var(--safe-b)); color: var(--muted); }
+
+/* ---------- 8. FLOATING READER KEYS (round 9: ONE horizontal row of round 3D buttons, bottom-RIGHT corner) ----------
+   WHY: the person asked for the keys in a single HORIZONTAL row (reload this chapter, reload all, previous, next, end), in the
+        right corner, and as 3D CIRCLES instead of squares.
+   HOW: flex row. Each key is a circle (border-radius 50%). The 3D look comes from three things:
+          1. a radial-gradient (light spot top-left) that makes it look like a ball / dome,
+          2. a solid shadow under it (box-shadow 0 5px 0 = the "thickness" of the button),
+          3. inset highlights. Pressing moves the key down 4px and shrinks the thickness, like a real key.
+        Side is switchable in Settings (body[data-side]); default is RIGHT (round 9).
+   WHERE: buttons live in index.html (<nav id="side">); app.js section 14 wires the clicks and the End key.
+   IMPROVE: add a click sound, or small legends under the keys. */
+/* ROUND 9b: #side is a click-through strip across the bottom. The reload keys (.kg-l) sit in the LEFT corner and the previous /
+   next / end keys (.kg-r) form one horizontal row in the RIGHT corner. WHY a strip: both groups hide and show together
+   (one .ui-hide), and pointer-events:none lets you tap the pictures between the groups. */
+#side {
+  position: fixed; bottom: calc(14px + var(--safe-b)); left: 12px; right: 12px; z-index: 30;
+  --key: 50px;
+  display: flex; flex-direction: row; justify-content: space-between; align-items: flex-end;
+  pointer-events: none;
+}
+#side .kg { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 9px; pointer-events: auto; }
+body[data-side="left"] #side { flex-direction: row-reverse; }        /* Settings > "Side of the arrow keys" = left swaps the groups */
+#side .key {
+  width: var(--key); height: var(--key); min-width: 0; padding: 0; border-radius: 50%;
+  font-size: 1.3rem; font-weight: 700; line-height: 1;
+  color: var(--fg);
+  background: radial-gradient(circle at 34% 26%, var(--keyhi) 0%, var(--keytop) 46%, var(--keyedge) 150%);
+  border: 1px solid var(--line);
+  box-shadow: 0 5px 0 var(--keyedge), 0 10px 14px rgba(0, 0, 0, .30),
+              inset 0 2px 3px rgba(255, 255, 255, .55), inset 0 -3px 5px rgba(0, 0, 0, .12);
+  transition: transform .06s, box-shadow .06s;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+#side .key small { display: block; font-size: .52rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-top: 1px; }
+#side .key:hover { border-color: var(--accent); }
+#side .key:active, #side .key.pressed {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--keyedge), 0 3px 5px rgba(0, 0, 0, .25), inset 0 2px 3px rgba(255, 255, 255, .4), inset 0 -2px 4px rgba(0, 0, 0, .15);
+}
+#side .key.spin { color: var(--accent); animation: keyspin .9s linear infinite; }     /* shown while a reload is running */
+@keyframes keyspin { to { transform: rotate(360deg); } }
+@media (max-width: 520px) { #side { --key: 44px; left: 8px; right: 8px; } #side .kg { gap: 7px; } }
+@media (max-width: 370px) { #side { --key: 40px; } #side .kg { gap: 5px; } }          /* very small phones: the five keys still fit in one row */
+@media (prefers-reduced-motion: reduce) { #side .key.spin { animation: none; } }
+
+/* ---------- 9. CHAPTER DROPDOWN ---------- */
+#chapterMenu {
+  position: fixed; top: calc(104px + var(--safe-t)); right: 8px; z-index: 40;
+  width: min(360px, calc(100vw - 16px)); max-height: 62vh; overflow: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+}
+#chapterMenu .dl-menu { display: block; width: calc(100% - 12px); margin: 6px; }
+#chapterList { list-style: none; margin: 0; padding: 6px; }
+#chapterList button {
+  display: block; width: 100%; text-align: left; border: 0; border-radius: 8px;
+  padding: 10px 12px; min-height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#chapterList button.current { background: var(--accent); color: #fff; }
+
+/* ---------- 10. TOAST, BUSY, SETTINGS ---------- */
+#toast {
+  position: fixed; left: 50%; bottom: calc(80px + var(--safe-b)); transform: translate(-50%, 20px);
+  max-width: min(92vw, 520px); padding: 10px 16px; border-radius: 10px;
+  background: #222; color: #fff; opacity: 0; pointer-events: none; z-index: 60;
+  transition: opacity .25s, transform .25s;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#busy {
+  position: fixed; inset: 0; z-index: 55; display: flex; align-items: center; justify-content: center;
+  background: var(--bar); font-weight: 600;
+}
+dialog { width: min(92vw, 480px); max-height: 90vh; max-height: 90dvh; overflow: auto;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--bg); color: var(--fg); padding: 18px; }
+dialog::backdrop { background: rgba(0, 0, 0, .5); }
+dialog label { display: block; margin: 12px 0 4px; }
+dialog select { min-height: 36px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+dialog .row { display: flex; gap: 8px; justify-content: space-between; margin-top: 16px; }
+
+/* ---------- 10c. SETTINGS DIALOG: FITS ONE SCREEN (round 9) ----------
+   WHY: the settings used to be one long column, so you had to scroll inside it. Now the options sit in cards in a grid.
+   HOW: .set-grid is a CSS grid with auto-fit columns: 4 columns on a big monitor, 2 on a tablet, 1 on a phone. The dialog
+        is as wide as the screen allows and never taller than the screen. app.js fitSettings() measures it: if the cards
+        still do not fit, it adds the class "tabs" and only the selected card is shown (the tab row appears). So you never
+        need to scroll, on any size, and no option is removed.
+   WHERE: markup in index.html (<dialog id="settings">); the switch is app.js fitSettings() and the tab clicks in section 15.
+   IMPROVE: remember the last used tab; let the user drag the cards into a different order. */
+#settings { width: min(98vw, 1180px); max-height: 96vh; max-height: 96dvh; padding: 12px 14px; }
+#settings .set-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+#settings h3 { margin: 0; }
+#setTabs { display: none; gap: 6px; flex-wrap: wrap; }                 /* only shown in tab mode */
+#setTabs button { min-height: 36px; padding: 0 12px; border-radius: 99px; }
+#setTabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+#settings.tabs #setTabs { display: flex; }
+#settings.tabs .set-card:not(.active) { display: none; }                /* tab mode: one card at a time */
+.set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 10px; margin-top: 10px; align-items: start; }
+.set-card { border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px 8px; margin: 0; min-width: 0; }
+.set-card legend { font-weight: 600; padding: 0 6px; }
+#settings label { margin: 6px 0 2px; }
+#settings .muted.small { margin: 4px 0; }
+#settings .row { margin-top: 10px; }
+#settings button { min-height: 36px; }
+#settings .rg-row { gap: 8px; }
+#settings .inline { margin-top: 4px; flex-wrap: wrap; }
+#settings #proxyList { max-height: 24vh; overflow: auto; }              /* a long proxy list scrolls on its own, the dialog does not grow */
+#settings #secList { margin-top: 4px; }
+@media (max-height: 560px) { #settings .muted.small { display: none; } }  /* very short windows: hide the long help texts, keep every control */
+
+/* Proxy list in Settings. Each row: proxy name, a small status text, and a remove button. */
+#proxyBox { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin: 0; }
+#proxyBox legend { font-weight: 600; padding: 0 6px; }
+#proxyList { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#proxyList li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 2px 4px 2px 10px; }
+#proxyList .pname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px ui-monospace, Consolas, monospace; }
+#proxyList .pstate { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#proxyList button { min-height: 34px; border: 0; }
+.inline { display: flex; gap: 6px; margin-top: 6px; }
+.inline input { flex: 1; min-width: 0; }
+
+/* ---------- 10b. PDF DOWNLOAD PANEL ----------
+   WHY: a centred card with a progress bar while the PDF is being built (can take minutes for many chapters).
+   IMPROVE: show the estimated file size and time left. */
+/* ---------- DOWNLOAD DOCK + RANGE DIALOG (round 7) ----------
+   WHY: the download must stay visible (and not block reading) while chapters are fetched.
+        The dock floats in the bottom corner (the opposite side of the reader keys); the pill is the minimised form.
+   HOW: #dock.min hides the list and shows only the pill. The pill's ring is a conic-gradient filled by the CSS
+        variable --p (0-100) that app.js sets while a job runs. Jobs are <li class="dl-job">.
+   WHERE: markup in index.html (#dock, #rangeDlg); logic in app.js sections 12b and 12c.
+   IMPROVE: make the dock draggable, add a sound or notification when a file is ready. */
+.dl-bar { height: 10px; margin: 8px 0 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.dl-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+/* ROUND 8: the dock sits right ABOVE the reader keys, in the same corner. column-reverse puts the open list above the round pill. */
+#dock { position: fixed; right: 12px; left: auto; bottom: calc(18px + var(--safe-b)); z-index: 60; width: min(380px, calc(100vw - 24px));
+  display: flex; flex-direction: column-reverse; align-items: flex-end; }
+body[data-side="left"] #dock { right: auto; left: 12px; align-items: flex-start; }
+body.reading #dock { bottom: calc(14px + 5px + 50px + 14px + var(--safe-b)); }          /* above the key row */
+body:not(.reading) #dock { bottom: calc(86px + var(--safe-b)); }                        /* above the Reading mode button */
+#dockBox { width: 100%; }
+#dockIcon.done .ring { background: #2f9e44; }
+#dockIcon.done .arrow { color: #2f9e44; font-weight: 800; }
+#dockBox { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); margin-bottom: 8px; max-height: 55vh; overflow: auto; }
+#dock.min #dockBox { display: none; }
+.dock-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 0 14px; }
+.dock-head button { border: 0; min-width: 40px; min-height: 36px; }
+#dockList { list-style: none; margin: 0; padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 10px; }
+.dl-job { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.dj-top { display: flex; justify-content: space-between; gap: 8px; }
+.dj-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-size { flex: none; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+.dj-btns { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; margin-top: 6px; }
+.dj-btns button { min-height: 34px; padding: 0 12px; }
+.dl-job[data-status="done"] .dl-bar i { background: #2f9e44; }
+.dl-job[data-status="error"] .dl-bar i, .dl-job[data-status="cancelled"] .dl-bar i { background: #c92a2a; }
+#dockIcon { display: flex; align-items: center; gap: 8px; margin-left: 0; padding: 4px 14px 4px 4px; min-height: 48px; border-radius: 99px;
+  background: var(--bg); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--fg); }
+#dockIcon .ring { --p: 0; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+#dockIcon { --p: 0; }
+#dockIcon .ring { background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+#dockIcon .arrow { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); }
+#dockIcon.busy .arrow { animation: bob 1.1s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(2px); } }
+#dockCount:not(:empty) { background: var(--accent); color: #fff; border-radius: 99px; padding: 0 7px; font-size: .75rem; }
+@media (prefers-reduced-motion: reduce) { #dockIcon.busy .arrow { animation: none; } }
+
+/* Range dialog + memory / security boxes in the settings. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 128px; overflow: auto; margin: 8px 0; }
+.chip { min-height: 34px; padding: 0 12px; border-radius: 99px; font-size: .9rem; }
+.rg-row { display: flex; gap: 10px; }
+.rg-row label { flex: 1; min-width: 0; }
+.rg-row select { width: 100%; }
+#memBox, #secBox { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin: 0; }
+#memBox legend, #secBox legend { font-weight: 600; padding: 0 6px; }
+label.check { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+#secList { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#chapterMenu .dl-menu + .dl-menu { margin-top: 0; }
+
+/* ---------- 11. BIG ERROR POP-UP (round 8) ----------
+   WHY: errors must be impossible to miss and easy to copy. It is a modal <dialog>: centred, red border, with a plain
+        one-line summary, a hint, and the full report in a selectable text box.
+   IMPROVE: add a "Retry" button that repeats the action that failed. */
+#errbox { width: min(96vw, 760px); border: 3px solid #b3261e; }
+#errbox h2 { margin: 0 0 8px; color: #b3261e; font-size: 1.45rem; }
+#errSummary { margin: 0 0 6px; font-weight: 700; font-size: 1.05rem; word-break: break-word; }
+#errHint { margin: 0 0 10px; }
+#errText {
+  width: 100%; resize: vertical; font: 12px/1.4 ui-monospace, Consolas, monospace;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+  -webkit-user-select: text; user-select: text;
+}
+
+/* ---------- 12. FAILED PAGE + CLEARED CHAPTER NOTICES (round 8) ----------
+   WHY: a picture that cannot load used to be an empty grey box. Now it says so and offers Retry / Open picture. */
+.page-fail { text-align: center; padding: 36px 14px; color: var(--muted); background: rgba(179, 38, 30, .08); border-top: 1px solid var(--line); }
+.page-fail .row { display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 10px; }
+.page-fail a { color: var(--accent); }
+.ch-cleared { text-align: center; color: var(--muted); padding: 40px 14px; }
+
+/* ---------- 13. ROUND 8 EXTRAS ----------
+   WHY: (1) while you scroll down the round keys fade away; the download dock then slides down so it does not float
+        in empty space, and it STAYS visible (a download must always be checkable).
+        (2) the dock pill shows red when a download failed.
+   IMPROVE: make the dock draggable. */
+#dock { transition: bottom .25s; }
+body.reading.scrolling #dock { bottom: calc(18px + var(--safe-b)); }
+#dockIcon.err .ring { background: #c92a2a; }
+#dockIcon.err .arrow { color: #c92a2a; font-weight: 800; }
+/* The short notice ("Download started...") must not cover the round download button, so in reading mode it floats higher. */
+body.reading #toast { bottom: calc(150px + var(--safe-b)); }
+
+/* ROUND 9b: the clear (x) button INSIDE a search box. WHY: pasting a new link meant deleting the old one by hand. HOW: the
+   input gets extra right padding, the button floats over that spot and only shows when the box has text (app.js). */
+.inwrap { position: relative; flex: 1; display: flex; min-width: 0; }
+.inwrap input { flex: 1; min-width: 0; padding-right: 38px; }
+.clearx { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; min-height: 0; padding: 0;
+  border-radius: 50%; border: 0; background: var(--line); color: var(--fg); font-size: .8rem; line-height: 1; cursor: pointer; }
+.clearx[hidden] { display: none; }
+
+/* ROUND 9b (phones): the "End reading" words are hidden on narrow screens (only the x stays) so the manga title gets room.
+   Selects in the settings cards may never be wider than their card. */
+@media (max-width: 520px) { #btnExit .lbl { display: none; } }
+#settings select { max-width: 100%; }
+
+
+/* =====================================================================
+   ROUND 10 ADDITIONS
+   WHY / HOW / IMPROVE are written next to each block.
+   ===================================================================== */
+
+/* The clear (x) button inside a search box: SMALL and FIXED size now (22 px), so it never stretches with the box.
+   WHY: it was too big. HOW: explicit width/height, flex:none, min-* reset so the global 44 px button rule cannot grow it. */
+.clearx { width: 22px; height: 22px; min-width: 22px; min-height: 22px; flex: none; right: 8px; font-size: .62rem; padding: 0; line-height: 22px; }
+.inwrap input { padding-right: 36px; }
+
+/* "top" key: it uses the same .key rules as the reload keys (round 3D look). Only the little label needs a rule. */
+#side .k-top { font-size: 1.25rem; }
+
+/* DOWNLOAD BUTTON that is always there in reading mode (minimised round pill above the arrow keys).
+   WHY: you asked for it to be visible like the arrow keys and to hide when you scroll down (class ui-hide does that).
+   HOW: while nothing is downloading only the round icon shows; while a job runs the ring fills, the arrow bobs and a glow
+   pulses (the "notification"); green when a PDF is ready, red on a failure. */
+#dockIcon:not(.busy):not(.done):not(.err) #dockLabel { display: none; }
+#dockIcon:not(.busy):not(.done):not(.err) { padding: 4px; }
+#dockIcon.busy { animation: dockglow 1.6s ease-in-out infinite; }
+@keyframes dockglow { 0%, 100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 5px rgba(232, 89, 12, .28), var(--shadow); } }
+@media (prefers-reduced-motion: reduce) { #dockIcon.busy { animation: none; } }
+
+/* Range dialog: estimated size line. Colour says how big: normal / big (orange) / huge (red). */
+.rg-size { margin: 8px 0 2px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font-weight: 600; font-size: .92rem; }
+.rg-size[data-level="big"] { border-color: #e8590c; background: rgba(232, 89, 12, .08); }
+.rg-size[data-level="huge"] { border-color: #c92a2a; background: rgba(201, 42, 42, .09); }
+.rg-size small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+/* START PAGE (digital look): hero card, steps, avatar cards. Plain CSS only. */
+#start { max-width: 860px; }
+.hero { position: relative; overflow: hidden; padding: 26px 20px 20px; margin-bottom: 18px; border-radius: 22px; text-align: center;
+  color: #fff; background: linear-gradient(135deg, #3b2bd9 0%, #7a2cf0 48%, #e8590c 130%); background-size: 160% 160%;
+  animation: herodrift 14s ease-in-out infinite; box-shadow: 0 14px 40px rgba(60, 40, 200, .28); }
+@keyframes herodrift { 50% { background-position: 100% 60%; } }
+@media (prefers-reduced-motion: reduce) { .hero { animation: none; } }
+.hero h2 { margin: 6px 0 4px; font-size: clamp(1.35rem, 4.6vw, 2rem); line-height: 1.15; }
+.hero-badge { display: inline-block; padding: 3px 12px; border-radius: 99px; background: rgba(255, 255, 255, .18); font-weight: 700; font-size: .85rem; }
+.hero-sub { margin: 0 0 14px; opacity: .9; }
+#heroForm { display: flex; gap: 6px; align-items: center; max-width: 640px; margin: 0 auto; }
+#heroForm .inwrap { flex: 1; }
+#heroForm input { width: 100%; min-height: 48px; border-radius: 14px; border: 0; font-size: 16px; background: #fff; color: #111; }
+#heroForm button { min-height: 48px; border-radius: 14px; }
+#heroForm .clearx { background: #e5e5ea; color: #333; }
+.status-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+.status-chips .chip2 { padding: 4px 12px; border-radius: 99px; background: rgba(255, 255, 255, .2); color: #fff; font-size: .8rem; font-weight: 600; border: 1px solid rgba(255, 255, 255, .3); min-height: 0; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.step { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: var(--shadow); }
+.step b { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: .85rem; }
+.step span { font-weight: 700; margin-top: 4px; }
+.step small { color: var(--muted); }
+.list.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.item { flex-direction: row !important; align-items: center !important; gap: 10px !important; }
+.item .av { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 1.1rem; }
+.item .tx { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; gap: 2px; }
+.item:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+/* ROUND 10 fix: the search-bar rules (".rb-search button { min-height: 40px }") were making the clear (x) button tall.
+   A more specific selector (.inwrap .clearx) wins and pins it to 22 x 22 px everywhere. */
+.inwrap .clearx { width: 22px; height: 22px; min-width: 22px; min-height: 22px; max-height: 22px; line-height: 20px; padding: 0; }
